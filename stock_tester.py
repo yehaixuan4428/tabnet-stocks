@@ -6,6 +6,7 @@ import pandas as pd
 from pytorch_tabnet.tab_model_stock import TabNetStockRegressor
 from sklearn.model_selection import train_test_split
 from pytorch_tabnet.stock_dataloader_cs import StockDataLoaderCS, StockDatasetCS
+from pytorch_tabnet.custom_loss_eval_functions import *
 
 
 def get_feature():
@@ -38,11 +39,12 @@ if __name__ == "__main__":
         y_train=y_train,
         eval_set=[(X_train, y_train), (X_valid, y_valid)],
         eval_name=["train", "valid"],
-        eval_metric=["rmse", "mse"],
+        eval_metric=["rmse", PearsonCorrelationAbsMetric],
         max_epochs=10,
         patience=0,
         batch_size=1024,
         virtual_batch_size=128,
         num_workers=0,
         drop_last=False,
+        loss_fn=pearsonCorrelationLossAbs,
     )
