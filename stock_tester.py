@@ -3,10 +3,15 @@ from factor_processors.data_loader import DataLoader
 import rqdatac
 import numpy as np
 import pandas as pd
-from pytorch_tabnet.tab_model_stock import TabNetStockRegressor
+from pytorch_tabnet.tab_model import TabNetRegressorStock
 from sklearn.model_selection import train_test_split
-from pytorch_tabnet.stock_dataloader_cs import StockDataLoaderCS, StockDatasetCS
-from pytorch_tabnet.custom_loss_eval_functions import *
+from pytorch_tabnet.utils import StockDataLoaderCS, StockDatasetCS
+from pytorch_tabnet.metrics import (
+    PearsonCorrelationAbsMetric,
+    PearsonCorrelationSqrMetric,
+    pearsonCorrelationLossAbs,
+    pearsonCorrelationLossSqr,
+)
 
 
 def get_feature():
@@ -32,7 +37,7 @@ if __name__ == "__main__":
     X_valid = features.loc[valid_dates]
     y_valid = label.loc[valid_dates]
 
-    clf = TabNetStockRegressor()
+    clf = TabNetRegressorStock()
 
     clf.fit(
         X_train=X_train,

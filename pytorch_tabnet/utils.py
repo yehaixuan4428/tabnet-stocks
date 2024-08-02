@@ -355,7 +355,9 @@ def check_list_groups(list_groups, input_dim):
         for group_pos, group in enumerate(list_groups):
             msg = f"Groups must be given as a list of list, but found {group} in position {group_pos}."  # noqa
             assert isinstance(group, list), msg
-            assert len(group) > 0, "Empty groups are forbidding please remove empty groups []"
+            assert (
+                len(group) > 0
+            ), "Empty groups are forbidding please remove empty groups []"
 
     n_elements_in_groups = np.sum([len(group) for group in list_groups])
     flat_list = []
@@ -363,11 +365,15 @@ def check_list_groups(list_groups, input_dim):
         flat_list.extend(group)
     unique_elements = np.unique(flat_list)
     n_unique_elements_in_groups = len(unique_elements)
-    msg = f"One feature can only appear in one group, please check your grouped_features."
+    msg = (
+        f"One feature can only appear in one group, please check your grouped_features."
+    )
     assert n_unique_elements_in_groups == n_elements_in_groups, msg
 
     highest_feat = np.max(unique_elements)
-    assert highest_feat < input_dim, f"Number of features is {input_dim} but one group contains {highest_feat}."  # noqa
+    assert (
+        highest_feat < input_dim
+    ), f"Number of features is {input_dim} but one group contains {highest_feat}."  # noqa
     return
 
 
@@ -502,7 +508,9 @@ def check_input(X):
     and check array according to scikit rules
     """
     if isinstance(X, (pd.DataFrame, pd.Series)):
-        err_message = "Pandas DataFrame are not supported: apply X.values when calling fit"
+        err_message = (
+            "Pandas DataFrame are not supported: apply X.values when calling fit"
+        )
         raise TypeError(err_message)
     check_array(X, accept_sparse=True)
 
@@ -513,7 +521,9 @@ def check_warm_start(warm_start, from_unsupervised):
     """
     if warm_start and from_unsupervised is not None:
         warn_msg = "warm_start=True and from_unsupervised != None: "
-        warn_msg = "warm_start will be ignore, training will start from unsupervised weights"
+        warn_msg = (
+            "warm_start will be ignore, training will start from unsupervised weights"
+        )
         warnings.warn(warn_msg)
     return
 
@@ -550,3 +560,149 @@ def check_embedding_parameters(cat_dims, cat_idxs, cat_emb_dim):
         cat_emb_dims = [cat_emb_dims[i] for i in sorted_idxs]
 
     return cat_dims, cat_idxs, cat_emb_dims
+
+
+# Custom Dataset and DataLoader
+class StockDatasetCS(Dataset):
+    """
+    截面特征
+    """
+
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.dates = x.index.get_level_values(0).unique()
+
+    def __len__(self):
+        return len(self.dates)
+
+    def __getitem__(self, idx):
+        date = self.dates[idx]
+        x, y = self.x.loc[date].values, self.y.loc[date].values.reshape(-1, 1)
+        return x, y
+
+
+class StockDataLoaderCS(DataLoader):
+    """
+    custom stock market dataloader, 每个batch只包含单日全部股票
+    """
+
+    def __init__(self, dataset, **kwargs):
+        super().__init__(dataset, batch_size=1, collate_fn=self.collate_fn, **kwargs)
+
+    def collate_fn(self, batch):
+        features, labels = zip(*batch)
+        features = torch.tensor(features[0], dtype=torch.float)
+        labels = torch.tensor(labels[0], dtype=torch.float)
+        return features, labels
+
+
+class StockPredictDatasetCS(Dataset):
+    """
+    截面特征
+    """
+
+    def __init__(self, x):
+        self.x = x
+        self.dates = x.index.get_level_values(0).unique()
+
+    def __len__(self):
+        return len(self.dates)
+
+    def __getitem__(self, idx):
+        date = self.dates[idx]
+        x = self.x.loc[date].values
+        return x
+
+
+class StockPredictDataLoaderCS(DataLoader):
+    """
+    custom stock market dataloader, 每个batch只包含单日全部股票
+    """
+
+    def __init__(self, dataset, **kwargs):
+        super().__init__(dataset, batch_size=1, collate_fn=self.collate_fn, **kwargs)
+
+    def collate_fn(self, batch):
+        features = torch.tensor(batch[0], dtype=torch.float)
+        return features
+
+
+def check_input_stock(X):
+    """
+    Raise a clear error if X is a pandas dataframe
+    and check array according to scikit rules
+    """
+    if isinstance(X, pd.DataFrame):
+        check_array(X.values, accept_sparse=False)
+    elif isinstance(X, pd.Series):
+        check_array(X.values.reshape(-1, 1), accept_sparse=False)
+    else:
+        check_array(X, accept_sparse=True)
+
+
+def validate_eval_set_stocks(eval_set, eval_name, X_train, y_train):
+    """Check if the shapes of eval_set are compatible with (X_train, y_train).
+
+    Parameters
+    ----------
+    eval_set : list of tuple
+        List of eval tuple set (X, y).
+        The last one is used for early stopping
+    eval_name : list of str
+        List of eval set names.
+    X_train : np.ndarray
+        Train owned products
+    y_train : np.array
+        Train targeted products
+
+    Returns
+    -------
+    eval_names : list of str
+        Validated list of eval_names.
+    eval_set : list of tuple
+        Validated list of eval_set.
+
+    """
+    eval_name = eval_name or [f"val_{i}" for i in range(len(eval_set))]
+
+    assert len(eval_set) == len(
+        eval_name
+    ), "eval_set and eval_name have not the same length"
+    if len(eval_set) > 0:
+        assert all(
+            len(elem) == 2 for elem in eval_set
+        ), "Each tuple of eval_set need to have two elements"
+    for name, (X, y) in zip(eval_name, eval_set):
+        check_input_stock(X)
+        msg = (
+            f"Dimension mismatch between X_{name} "
+            + f"{X.shape} and X_train {X_train.shape}"
+        )
+        assert len(X.shape) == len(X_train.shape), msg
+
+        msg = (
+            f"Dimension mismatch between y_{name} "
+            + f"{y.shape} and y_train {y_train.shape}"
+        )
+        assert len(y.shape) == len(y_train.shape), msg
+
+        msg = (
+            f"Number of columns is different between X_{name} "
+            + f"({X.shape[1]}) and X_train ({X_train.shape[1]})"
+        )
+        assert X.shape[1] == X_train.shape[1], msg
+
+        if len(y_train.shape) == 2:
+            msg = (
+                f"Number of columns is different between y_{name} "
+                + f"({y.shape[1]}) and y_train ({y_train.shape[1]})"
+            )
+            assert y.shape[1] == y_train.shape[1], msg
+        msg = (
+            f"You need the same number of rows between X_{name} "
+            + f"({X.shape[0]}) and y_{name} ({y.shape[0]})"
+        )
+        assert X.shape[0] == y.shape[0], msg
+
+    return eval_name, eval_set
